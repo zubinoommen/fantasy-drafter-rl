@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "seasons": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "scoring": "full_ppr",
+  "season_type": "REG",
+  "availability_definition": "weekly roster status ACT on observed team-game weeks; active weeks without stats are zero points",
+  "minimum_active_weeks": 4,
+  "sources": {
+    "player_stats": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{season}.parquet",
+    "weekly_rosters": "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_{season}.parquet"
+  },
+  "rows": 4061,
+  "positions": {
+    "QB": {
+      "profile": {
+        "count": 24,
+        "elite_mu": 25.0568,
+        "floor_mu": 13.7116,
+        "decay_power": 0.505,
+        "mu_noise": 1.0685,
+        "sigma_low": 5.7238,
+        "sigma_high": 10.2576,
+        "injury_alpha": 0.2374,
+        "injury_beta": 1.9804,
+        "injury_max": 0.5294
+      },
+      "player_seasons": 543,
+      "ranked_player_seasons": 192,
+      "mu_quantiles": [
+        14.1996,
+        17.4794,
+        22.0322
+      ],
+      "sigma_quantiles": [
+        5.7238,
+        7.545,
+        10.2576
+      ],
+      "unavailable_probability_quantiles": [
+        0.0,
+        0.0,
+        0.3728
+      ]
+    },
+    "RB": {
+      "profile": {
+        "count": 36,
+        "elite_mu": 24.3799,
+        "floor_mu": 9.888,
+        "decay_power": 0.43,
+        "mu_noise": 0.8267,
+        "sigma_low": 5.6183,
+        "sigma_high": 10.4249,
+        "injury_alpha": 0.3915,
+        "injury_beta": 2.4962,
+        "injury_max": 0.5294
+      },
+      "player_seasons": 1034,
+      "ranked_player_seasons": 288,
+      "mu_quantiles": [
+        10.45,
+        13.6785,
+        19.5289
+      ],
+      "sigma_quantiles": [
+        5.6183,
+        7.649,
+        10.4249
+      ],
+      "unavailable_probability_quantiles": [
+        0.0,
+        0.0625,
+        0.375
+      ]
+    },
+    "WR": {
+      "profile": {
+        "count": 42,
+        "elite_mu": 23.6808,
+        "floor_mu": 11.1982,
+        "decay_power": 0.395,
+        "mu_noise": 0.7779,
+        "sigma_low": 5.8632,
+        "sigma_high": 10.5997,
+        "injury_alpha": 0.3246,
+        "injury_beta": 2.3489,
+        "injury_max": 0.5294
+      },
+      "player_seasons": 1600,
+      "ranked_player_seasons": 336,
+      "mu_quantiles": [
+        11.4708,
+        14.1686,
+        18.7742
+      ],
+      "sigma_quantiles": [
+        5.8632,
+        8.2015,
+        10.5997
+      ],
+      "unavailable_probability_quantiles": [
+        0.0,
+        0.0588,
+        0.3529
+      ]
+    },
+    "TE": {
+      "profile": {
+        "count": 18,
+        "elite_mu": 18.2445,
+        "floor_mu": 8.1104,
+        "decay_power": 0.43,
+        "mu_noise": 0.9215,
+        "sigma_low": 4.8407,
+        "sigma_high": 9.0177,
+        "injury_alpha": 0.3092,
+        "injury_beta": 1.9312,
+        "injury_max": 0.5294
+      },
+      "player_seasons": 884,
+      "ranked_player_seasons": 144,
+      "mu_quantiles": [
+        8.354,
+        10.4441,
+        15.0901
+      ],
+      "sigma_quantiles": [
+        4.8407,
+        6.8721,
+        9.0177
+      ],
+      "unavailable_probability_quantiles": [
+        0.0,
+        0.0588,
+        0.4529
+      ]
+    }
+  },
+  "profiles": {
+    "QB": {
+      "count": 24,
+      "elite_mu": 25.0568,
+      "floor_mu": 13.7116,
+      "decay_power": 0.505,
+      "mu_noise": 1.0685,
+      "sigma_low": 5.7238,
+      "sigma_high": 10.2576,
+      "injury_alpha": 0.2374,
+      "injury_beta": 1.9804,
+      "injury_max": 0.5294
+    },
+    "RB": {
+      "count": 36,
+      "elite_mu": 24.3799,
+      "floor_mu": 9.888,
+      "decay_power": 0.43,
+      "mu_noise": 0.8267,
+      "sigma_low": 5.6183,
+      "sigma_high": 10.4249,
+      "injury_alpha": 0.3915,
+      "injury_beta": 2.4962,
+      "injury_max": 0.5294
+    },
+    "WR": {
+      "count": 42,
+      "elite_mu": 23.6808,
+      "floor_mu": 11.1982,
+      "decay_power": 0.395,
+      "mu_noise": 0.7779,
+      "sigma_low": 5.8632,
+      "sigma_high": 10.5997,
+      "injury_alpha": 0.3246,
+      "injury_beta": 2.3489,
+      "injury_max": 0.5294
+    },
+    "TE": {
+      "count": 18,
+      "elite_mu": 18.2445,
+      "floor_mu": 8.1104,
+      "decay_power": 0.43,
+      "mu_noise": 0.9215,
+      "sigma_low": 4.8407,
+      "sigma_high": 9.0177,
+      "injury_alpha": 0.3092,
+      "injury_beta": 1.9312,
+      "injury_max": 0.5294
+    }
+  }
+}

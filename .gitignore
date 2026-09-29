@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.DS_Store
+
+# Pytest & tests
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Large datasets and checkpoint binaries
+data/*.parquet
+data/*.pt
+data/nflverse_cache/
+models/*.pt
+!models/.gitkeep
+
+# Jupyter checkpoints
+.ipynb_checkpoints/

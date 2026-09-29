@@ -1,0 +1,14 @@
+{
+  "rows": 72,
+  "mean_mlp_weekly_points": 118.02121202657443,
+  "mean_baseline_weekly_points": 111.70671597552786,
+  "mean_paired_advantage": 6.3144960510465715,
+  "paired_advantage_95_ci": [
+    4.695610022460952,
+    7.933382079632191
+  ],
+  "paired_win_rate": 0.8055555555555556,
+  "mean_field_advantage": 7.567376515426976,
+  "field_win_rate": 0.9305555555555556,
+  "interpretation": "Hindsight distribution benchmark on simulated drafts, not a reconstruction of historical fantasy drafts or ADP."
+}
