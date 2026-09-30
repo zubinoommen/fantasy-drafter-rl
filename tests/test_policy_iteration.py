@@ -20,6 +20,7 @@ from fantasy_draft.policy_iteration import (
     TrainingResult,
     ValueMLP,
     collect_policy_trajectories,
+    relabel_replay_states,
     run_fitted_policy_iteration,
 )
 from fantasy_draft.state import StateEncoder
@@ -127,6 +128,46 @@ def test_trajectory_rows_share_terminal_return_by_draft(tmp_path: Path) -> None:
     assert frame.groupby("draft_id")["season_seed"].nunique().max() == 1
     assert set(frame["iteration"]) == {0}
     assert frame["draft_id"].nunique() == result.drafts
+
+
+def test_replay_states_are_relabelled_for_current_iteration(tmp_path: Path) -> None:
+    output = tmp_path / "iteration_00.parquet"
+    distribution = LeagueConfigDistribution(
+        team_counts=(2,),
+        qb_requirements=(1,),
+        flex_requirements=(1,),
+        bench_slots=(1,),
+    )
+    collect_policy_trajectories(
+        n_samples=12,
+        controlled_policy=_FirstPolicy(),
+        output_path=output,
+        iteration=0,
+        season_simulations=2,
+        epsilon=0.0,
+        seed=9,
+        league_distribution=distribution,
+        verbose=False,
+    )
+
+    replay = relabel_replay_states(
+        [output],
+        n_samples=3,
+        controlled_policy=_LastPolicy(),
+        iteration=1,
+        season_simulations=1,
+        epsilon=0.0,
+        replay_decay=0.5,
+        seed=10,
+        verbose=False,
+    )
+
+    assert len(replay) == 3
+    assert all(row["is_replay"] for row in replay)
+    assert {row["iteration"] for row in replay} == {1}
+    assert {row["source_iteration"] for row in replay} == {0}
+    assert all("last" in row["evaluation_policy"] for row in replay)
+    assert all(row["season_simulations"] == 1 for row in replay)
 
 
 def test_run_loop_resumes_completed_iteration(

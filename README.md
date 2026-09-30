@@ -279,9 +279,9 @@ empirical result—not a policy-improvement guarantee.
 ## Monte Carlo fitted policy iteration
 
 [`notebooks/fitted_policy_iteration.ipynb`](notebooks/fitted_policy_iteration.ipynb)
-runs three evaluate/fit/improve rounds with 20,000 newly generated states per
-round. The controlled team starts on `RosterAwareSoftmaxPolicy`; after each
-value fit it chooses
+runs three evaluate/fit/improve rounds with 20,000 total states per round. The
+controlled team starts on `RosterAwareSoftmaxPolicy`; after each value fit it
+chooses
 
 \[
 \pi_{i+1}(s)=\arg\max_a \widehat V^{\pi_i}(T(s,a)).
@@ -291,9 +291,14 @@ Opponents remain on the roster-aware baseline, so this learns an approximate
 best response rather than a self-play equilibrium. Complete on-policy drafts
 provide Monte Carlo returns: every controlled-team post-pick state in one
 trajectory receives the expected weekly score of that trajectory's terminal
-roster. A small configurable epsilon supplies action diversity. Each round
-uses only fresh labels for the policy currently being evaluated, avoiding
-stale targets from previous policies.
+roster. A small configurable epsilon supplies action diversity.
+
+From iteration 1 onward, the default composition is 18,000 fresh states and
+2,000 historical states sampled with exponential recency weighting. Historical
+states are reconstructable and are continued again under the current policy;
+their stale old-policy Monte Carlo returns are never reused. Replay relabeling
+uses five season simulations instead of 25, keeping its runtime overhead
+bounded while maintaining some off-policy state coverage.
 
 Set `SMOKE_TEST=True` in the notebook for a quick two-round validation. The
 production run writes resumable datasets and metrics under

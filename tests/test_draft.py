@@ -30,7 +30,7 @@ def test_snake_order_and_next_turn_for_multiple_league_sizes(n_teams: int) -> No
 
 @pytest.mark.parametrize(
     ("qb", "flex", "bench", "expected_rounds"),
-    [(1, 1, 3, 10), (1, 2, 3, 11), (2, 1, 3, 11), (2, 2, 4, 13)],
+    [(1, 1, 3, 10), (1, 2, 3, 11), (2, 1, 3, 11), (2, 2, 4, 13), (1, 1, 5, 12), (2, 2, 5, 14)],
 )
 def test_draft_length_derives_from_roster_configuration(
     qb: int, flex: int, bench: int, expected_rounds: int

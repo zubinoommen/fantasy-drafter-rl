@@ -38,12 +38,17 @@ class GeneratedState:
 
 @dataclass(frozen=True, slots=True)
 class LeagueConfigDistribution:
-    """Configurable Cartesian family of synthetic leagues."""
+    """Configurable Cartesian family of synthetic leagues.
+
+    By default, 1-QB leagues are weighted 3x compared to 2-QB leagues (75% / 25%),
+    and bench slots include 3, 4, or 5 spots (with 3-4 being standard and 5 bench spots
+    appearing 20% of the time).
+    """
 
     team_counts: tuple[int, ...] = (8, 10, 12)
-    qb_requirements: tuple[int, ...] = (1, 2)
+    qb_requirements: tuple[int, ...] = (1, 1, 1, 2)
     flex_requirements: tuple[int, ...] = (1, 2)
-    bench_slots: tuple[int, ...] = (3, 4)
+    bench_slots: tuple[int, ...] = (3, 3, 4, 4, 5)
 
     def configurations(self) -> tuple[LeagueConfig, ...]:
         configs: list[LeagueConfig] = []

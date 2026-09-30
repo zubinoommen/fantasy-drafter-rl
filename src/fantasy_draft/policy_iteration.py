@@ -11,6 +11,7 @@ import json
 import math
 import random
 import shutil
+import zlib
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -226,6 +227,8 @@ class CollectionResult:
     output_path: Path
     reward_mean: float
     reward_std: float
+    fresh_rows: int = 0
+    replay_rows: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +245,9 @@ class PolicyIterationConfig:
     samples_per_iteration: int = 20_000
     season_simulations: int = 25
     epsilon: float = 0.10
+    replay_fraction: float = 0.10
+    replay_decay: float = 0.50
+    replay_season_simulations: int = 5
     benchmark_drafts: int = 96
     benchmark_seasons: int = 100
     seed: int = 42
@@ -259,6 +265,7 @@ class PolicyIterationConfig:
             self.iterations,
             self.samples_per_iteration,
             self.season_simulations,
+            self.replay_season_simulations,
             self.benchmark_drafts,
             self.benchmark_seasons,
             self.max_epochs,
@@ -269,6 +276,10 @@ class PolicyIterationConfig:
             raise ValueError("iteration and sample counts must be positive")
         if not 0.0 <= self.epsilon <= 1.0:
             raise ValueError("epsilon must be in [0, 1]")
+        if not 0.0 <= self.replay_fraction < 1.0:
+            raise ValueError("replay_fraction must be in [0, 1)")
+        if not 0.0 < self.replay_decay <= 1.0:
+            raise ValueError("replay_decay must be in (0, 1]")
 
 
 def _season_return(
@@ -302,6 +313,18 @@ def _season_return(
     return float(utilities.mean()), standard_error
 
 
+def _pack_state(state: DraftState) -> bytes:
+    """Serialize a reconstructable state compactly for future replay."""
+
+    raw = json.dumps(state.to_dict(), separators=(",", ":")).encode("utf-8")
+    return zlib.compress(raw, level=3)
+
+
+def _unpack_state(payload: bytes) -> DraftState:
+    raw = zlib.decompress(payload).decode("utf-8")
+    return DraftState.from_dict(json.loads(raw))
+
+
 def _write_value_parquet(
     rows: list[dict[str, Any]],
     output_path: Path,
@@ -317,8 +340,9 @@ def _write_value_parquet(
             'Parquet output requires pyarrow; install with pip install -e ".[ml]"'
         ) from exc
 
-    vectors = np.stack([row.pop("state_vector") for row in rows]).astype(np.float32)
-    columns = {key: [row[key] for row in rows] for key in rows[0]}
+    vectors = np.stack([row["state_vector"] for row in rows]).astype(np.float32)
+    scalar_keys = [key for key in rows[0] if key != "state_vector"]
+    columns = {key: [row[key] for row in rows] for key in scalar_keys}
     columns["state_vector"] = pa.FixedSizeListArray.from_arrays(
         pa.array(vectors.reshape(-1), type=pa.float32()),
         vectors.shape[1],
@@ -327,9 +351,9 @@ def _write_value_parquet(
     metadata = dict(table.schema.metadata or {})
     metadata.update(
         {
-            b"dataset_type": b"on_policy_trajectory_state_value",
+            b"dataset_type": b"fresh_and_relabelled_replay_state_value",
             b"reward_semantics": (
-                b"terminal_mean_weekly_score_shared_by_controlled_trajectory"
+                b"current_policy_terminal_mean_weekly_score"
             ),
             b"feature_names": json.dumps(StateEncoder().feature_names()).encode(),
             b"encoder_version": str(ENCODER_VERSION).encode(),
@@ -419,9 +443,12 @@ def collect_policy_trajectories(
                         f"{draft_id}-decision-{post_state.pick_index - 1:03d}"
                     ),
                     "state_vector": encoder.encode_state(post_state),
+                    "state_payload": _pack_state(post_state),
                     "reward": reward,
                     "reward_standard_error": reward_se,
                     "iteration": iteration,
+                    "source_iteration": iteration,
+                    "is_replay": False,
                     "action_player_id": action,
                     "action_position": player.position.value,
                     "action_mu": player.mu,
@@ -435,6 +462,7 @@ def collect_policy_trajectories(
                     "draft_history_seed": draft_seed,
                     "season_seed": season_seed,
                     "generation_policy": combined.name,
+                    "evaluation_policy": combined.name,
                     "epsilon": epsilon,
                     "season_simulations": season_simulations,
                     "encoder_version": ENCODER_VERSION,
@@ -460,7 +488,123 @@ def collect_policy_trajectories(
         output_path=output,
         reward_mean=float(rewards.mean()),
         reward_std=float(rewards.std()),
+        fresh_rows=len(rows),
+        replay_rows=0,
     )
+
+
+def _read_value_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise RuntimeError(
+            'Replay requires pyarrow; install with pip install -e ".[ml]"'
+        ) from exc
+
+    table = pq.read_table(path)
+    vectors = np.asarray(table["state_vector"].to_pylist(), dtype=np.float32)
+    records = table.drop(["state_vector"]).to_pylist()
+    for record, vector in zip(records, vectors, strict=True):
+        record["state_vector"] = vector
+    return records
+
+
+def relabel_replay_states(
+    dataset_paths: list[Path],
+    *,
+    n_samples: int,
+    controlled_policy: ControlledPolicy,
+    iteration: int,
+    season_simulations: int,
+    epsilon: float,
+    replay_decay: float,
+    seed: int,
+    verbose: bool = True,
+) -> list[dict[str, Any]]:
+    """Sample historical states by recency and relabel under the current policy.
+
+    Old Monte Carlo returns are intentionally discarded because they estimate
+    older policies.  Only state coverage is replayed.
+    """
+
+    if n_samples == 0:
+        return []
+    if not dataset_paths:
+        raise ValueError("replay requested without historical datasets")
+    candidates: list[dict[str, Any]] = []
+    weights: list[float] = []
+    for path in dataset_paths:
+        for row in _read_value_rows(path):
+            if "state_payload" not in row:
+                raise ValueError(
+                    f"{path} predates reconstructable replay; regenerate it"
+                )
+            age = max(0, iteration - 1 - int(row["iteration"]))
+            candidates.append(row)
+            weights.append(replay_decay**age)
+    if n_samples > len(candidates):
+        raise ValueError(
+            f"requested {n_samples} replay states from only {len(candidates)} rows"
+        )
+
+    rng = np.random.default_rng(seed)
+    probabilities = np.asarray(weights, dtype=float)
+    probabilities /= probabilities.sum()
+    selected_indices = rng.choice(
+        len(candidates),
+        size=n_samples,
+        replace=False,
+        p=probabilities,
+    )
+    behavior = EpsilonPolicy(controlled_policy, epsilon)
+    combined = ControlledVsOpponentPolicy(
+        behavior,
+        RosterAwareSoftmaxPolicy(),
+    )
+    relabelled: list[dict[str, Any]] = []
+    for replay_index, selected_index in enumerate(selected_indices):
+        old = candidates[int(selected_index)]
+        replay_seed = int(rng.integers(0, np.iinfo(np.int64).max))
+        season_seed = int(rng.integers(0, np.iinfo(np.int64).max))
+        state = _unpack_state(old["state_payload"])
+        environment = DraftEnvironment(state.config)
+        current = state
+        draft_rng = np.random.default_rng(replay_seed)
+        while not current.is_terminal:
+            action = combined.select_player(current, environment, draft_rng)
+            current = environment.step(current, action, validate=False)
+        reward, reward_se = _season_return(
+            current,
+            season_simulations,
+            np.random.default_rng(season_seed),
+        )
+        row = dict(old)
+        source_iteration = int(old.get("source_iteration", old["iteration"]))
+        source_draft = str(old["draft_id"])
+        replay_draft = f"iter-{iteration:02d}-replay-{source_draft}"
+        row.update(
+            {
+                "sample_id": f"{replay_draft}-sample-{replay_index:05d}",
+                "draft_id": replay_draft,
+                "decision_id": f"{replay_draft}-decision-{replay_index:05d}",
+                "reward": reward,
+                "reward_standard_error": reward_se,
+                "iteration": iteration,
+                "source_iteration": source_iteration,
+                "is_replay": True,
+                "season_seed": season_seed,
+                "evaluation_policy": combined.name,
+                "epsilon": epsilon,
+                "season_simulations": season_simulations,
+            }
+        )
+        relabelled.append(row)
+        if verbose and (replay_index == 0 or (replay_index + 1) % 500 == 0):
+            print(
+                f"iteration {iteration}: relabelled "
+                f"{replay_index + 1:,}/{n_samples:,} replay states"
+            )
+    return relabelled
 
 
 def _split_drafts(
@@ -868,19 +1012,27 @@ def run_fitted_policy_iteration(
     config.data_dir.mkdir(parents=True, exist_ok=True)
     config.model_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = config.data_dir / "manifest.json"
+    serialized_config = {
+        **asdict(config),
+        "data_dir": str(config.data_dir),
+        "model_dir": str(config.model_dir),
+    }
     manifest: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "algorithm": "monte_carlo_fitted_policy_iteration",
         "opponents": "RosterAwareSoftmaxPolicy",
-        "config": {
-            **asdict(config),
-            "data_dir": str(config.data_dir),
-            "model_dir": str(config.model_dir),
-        },
+        "config": serialized_config,
         "iterations": [],
     }
     if config.resume and manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            saved.get("schema_version") == manifest["schema_version"]
+            and saved.get("config") == serialized_config
+        ):
+            manifest = saved
+        elif verbose:
+            print("Ignoring incompatible policy-iteration manifest; starting fresh")
 
     completed = {
         int(record["iteration"]): record for record in manifest.get("iterations", [])
@@ -915,8 +1067,14 @@ def run_fitted_policy_iteration(
                 previous_checkpoint,
                 device=device or "cpu",
             )
-        collection = collect_policy_trajectories(
-            n_samples=config.samples_per_iteration,
+        replay_count = (
+            int(round(config.samples_per_iteration * config.replay_fraction))
+            if iteration > 0
+            else 0
+        )
+        fresh_count = config.samples_per_iteration - replay_count
+        fresh_collection = collect_policy_trajectories(
+            n_samples=fresh_count,
             controlled_policy=evaluated_policy,
             output_path=dataset_path,
             iteration=iteration,
@@ -925,6 +1083,49 @@ def run_fitted_policy_iteration(
             seed=config.seed + iteration * 10_000,
             verbose=verbose,
         )
+        collection = fresh_collection
+        if replay_count:
+            fresh_rows = _read_value_rows(dataset_path)
+            replay_rows = relabel_replay_states(
+                [
+                    config.data_dir / f"iteration_{index:02d}.parquet"
+                    for index in range(iteration)
+                ],
+                n_samples=replay_count,
+                controlled_policy=evaluated_policy,
+                iteration=iteration,
+                season_simulations=config.replay_season_simulations,
+                epsilon=config.epsilon,
+                replay_decay=config.replay_decay,
+                seed=config.seed + iteration * 10_000 + 1,
+                verbose=verbose,
+            )
+            combined_rows = [*fresh_rows, *replay_rows]
+            np.random.default_rng(config.seed + iteration).shuffle(combined_rows)
+            evaluated_name = (
+                f"recent_{len(fresh_rows)}_relabelled_replay_{len(replay_rows)}"
+                f"[{evaluated_policy.name}]"
+            )
+            _write_value_parquet(
+                combined_rows,
+                dataset_path,
+                policy_name=evaluated_name,
+                iteration=iteration,
+            )
+            rewards = np.asarray(
+                [row["reward"] for row in combined_rows],
+                dtype=float,
+            )
+            collection = CollectionResult(
+                rows=len(combined_rows),
+                drafts=fresh_collection.drafts
+                + len({row["draft_id"] for row in replay_rows}),
+                output_path=dataset_path,
+                reward_mean=float(rewards.mean()),
+                reward_std=float(rewards.std()),
+                fresh_rows=len(fresh_rows),
+                replay_rows=len(replay_rows),
+            )
         training = train_value_model(
             dataset_path,
             checkpoint_path,
