@@ -17,7 +17,9 @@ ENV/
 data/*.parquet
 data/*.pt
 data/nflverse_cache/
+data/policy_iteration*/
 models/*.pt
+models/policy_iteration*/
 !models/.gitkeep
 
 # Jupyter checkpoints

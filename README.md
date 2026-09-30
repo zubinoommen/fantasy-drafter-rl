@@ -276,6 +276,38 @@ because nflfastR does not provide fantasy ADP/draft-room histories. The MLP is
 an approximate value model under distribution shift, so outperformance is an
 empirical result—not a policy-improvement guarantee.
 
+## Monte Carlo fitted policy iteration
+
+[`notebooks/fitted_policy_iteration.ipynb`](notebooks/fitted_policy_iteration.ipynb)
+runs three evaluate/fit/improve rounds with 20,000 newly generated states per
+round. The controlled team starts on `RosterAwareSoftmaxPolicy`; after each
+value fit it chooses
+
+\[
+\pi_{i+1}(s)=\arg\max_a \widehat V^{\pi_i}(T(s,a)).
+\]
+
+Opponents remain on the roster-aware baseline, so this learns an approximate
+best response rather than a self-play equilibrium. Complete on-policy drafts
+provide Monte Carlo returns: every controlled-team post-pick state in one
+trajectory receives the expected weekly score of that trajectory's terminal
+roster. A small configurable epsilon supplies action diversity. Each round
+uses only fresh labels for the policy currently being evaluated, avoiding
+stale targets from previous policies.
+
+Set `SMOKE_TEST=True` in the notebook for a quick two-round validation. The
+production run writes resumable datasets and metrics under
+`data/policy_iteration/`, checkpoints under `models/policy_iteration/`, and
+selects `best_value.pt` using a fixed-seed held-out paired policy benchmark.
+Restarting the run skips iterations whose full artifact set is already present.
+
+This is fitted/generalized policy iteration, not exact tabular policy
+iteration. Finite Monte Carlo labels, neural approximation, and greedy
+maximization can cause regressions. Use the reported paired advantage and
+confidence interval—not model test error alone—to select a checkpoint. The
+production loop is intended for a GPU-backed Colab session and can take
+substantial time depending on simulation counts.
+
 ## Organization and extension points
 
 - `players.py`: replaceable synthetic player generation
